@@ -6,6 +6,9 @@
 #include <fstream>  // Для работы с файлами
 #include <sys/stat.h> // Для проверки существования папки на Unix-подобных системах
 #include <direct.h>   // Для Windows
+#include <filesystem>  // Для работы с папками и файлами
+
+namespace fs = std::filesystem;  // Для работы с файловой системой
 
 using namespace std;
 
@@ -43,8 +46,35 @@ void clearScreen() {
     #endif
 }
 
+// Функция поиска всех заголовочных файлов и библиотек в папках include и lib
+void findLibrariesAndIncludes(string& libraries, string& includes) {
+    // Папки для поиска
+    string includeDir = "include";
+    string libDir = "lib";
+
+    // Проверяем, существует ли папка include
+    if (fs::exists(includeDir) && fs::is_directory(includeDir)) {
+        // Поиск заголовочных файлов (*.h) в папке include
+        for (const auto& entry : fs::directory_iterator(includeDir)) {
+            if (entry.is_regular_file() && entry.path().extension() == ".h") {
+                includes += " -I" + entry.path().parent_path().string();
+            }
+        }
+    }
+
+    // Проверяем, существует ли папка lib
+    if (fs::exists(libDir) && fs::is_directory(libDir)) {
+        // Поиск библиотек (*.lib или *.a) в папке lib
+        for (const auto& entry : fs::directory_iterator(libDir)) {
+            if (entry.is_regular_file() && (entry.path().extension() == ".lib" || entry.path().extension() == ".a")) {
+                libraries += " -L" + entry.path().parent_path().string() + " -l" + entry.path().stem().string();
+            }
+        }
+    }
+}
+
 // Функция сборки для разных платформ
-void build(Platform platform) {
+void build(Platform platform, const string& libraries, const string& includes) {
     cout << "\033[1;32m[INFO]\033[0m Starting build process..." << endl;
 
     string programName, version;
@@ -93,10 +123,10 @@ void build(Platform platform) {
         remove("temp.txt");
 
         // Собираем команду для компиляции с полными путями в папку build
-        command = "g++ @filelist.txt -o build/" + programName + ".exe && del filelist.txt";
+        command = "g++ @filelist.txt " + includes + " " + libraries + " -o build/" + programName + ".exe && del filelist.txt";
     } else if (platform == Platform::Linux || platform == Platform::MacOS) {
         // Для Unix-подобных систем командой оболочки
-        command = "g++ src/*.cpp -o build/" + programName;
+        command = "g++ src/*.cpp " + includes + " " + libraries + " -o build/" + programName;
     } else {
         cout << "\033[1;31m[ERROR]\033[0m Unknown platform for building." << endl;
         return;
@@ -117,75 +147,77 @@ Platform choosePlatform() {
     string platform;
     getline(cin, platform); // Используем getline для ввода с пробелами
 
-    // Приводим строку к нижнему регистру
+    // Приводим к нижнему регистру
     transform(platform.begin(), platform.end(), platform.begin(), ::tolower);
 
-    // Теперь сравниваем строки без учета регистра
-    if (platform == "windows" || platform == "win") {
+    if (platform == "windows") {
         return Platform::Windows;
-    } else if (platform == "linux" || platform == "unix") {
+    } else if (platform == "linux") {
         return Platform::Linux;
-    } else if (platform == "mac" || platform == "macos") {
+    } else if (platform == "macos" || platform == "osx") {
         return Platform::MacOS;
     } else {
         return Platform::Unknown;
     }
 }
 
-// Функция для отображения меню
-void displayMenu() {
-    cout << "\033[48;5;235m\033[38;5;255m### Build System Console ###\033[0m\n" << endl;
-    cout << "\033[1;33m1. Build\033[0m\n";
-    cout << "\033[1;33m2. Choose platform\033[0m\n";
-    cout << "\033[1;33m3. Exit\033[0m\n";
-}
-
-// Основной цикл программы
 int main() {
-    int choice;
     Platform selectedPlatform = Platform::Unknown;
+    string libraries, includes;
+    int choice;
 
-    // Основной цикл программы
+    // Поиск библиотек и заголовочных файлов
+    findLibrariesAndIncludes(libraries, includes);
+
     while (true) {
         clearScreen();
+        printArt();  // Печать ASCII-арт глаза
 
-        // Выводим ASCII-арт глаза
-        printArt();
-
-        // Отображаем меню
-        displayMenu();
-
-        cout << "\033[1;36mEnter your choice: \033[0m";
+        // Меню
+        cout << "\033[1;36mPlease select an option:\033[0m" << endl;
+        cout << "1. Build Program" << endl;
+        cout << "2. Select Platform" << endl;
+        cout << "3. Add Libraries (automatic from include/lib)" << endl;
+        cout << "4. Exit" << endl;
+        cout << "\033[1;36mEnter choice (1-4): \033[0m";
         cin >> choice;
-
-        // Очистка потока ввода после ввода числа
-        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');  // Очистка потока после ввода числа
 
         switch (choice) {
-            case 1:
-                if (selectedPlatform != Platform::Unknown) {
-                    build(selectedPlatform);  // Строим для выбранной платформы
+            case 1: {
+                // Сборка программы
+                if (selectedPlatform == Platform::Unknown) {
+                    cout << "\033[1;31m[ERROR]\033[0m Please select a platform first." << endl;
                 } else {
-                    cout << "\033[1;31m[ERROR]\033[0m No platform selected!" << endl;
+                    build(selectedPlatform, libraries, includes);
                 }
                 break;
-            case 2:
+            }
+            case 2: {
+                // Выбор платформы
                 selectedPlatform = choosePlatform();
                 if (selectedPlatform == Platform::Unknown) {
-                    cout << "\033[1;31m[ERROR]\033[0m Unknown platform selected!" << endl;
+                    cout << "\033[1;31m[ERROR]\033[0m Unknown platform selected. Please try again." << endl;
                 } else {
-                    cout << "\033[1;36m[INFO]\033[0m Platform selected successfully!" << endl;
+                    cout << "\033[1;32m[INFO]\033[0m Platform selected successfully." << endl;
                 }
                 break;
-            case 3:
-                cout << "\033[1;32m[INFO]\033[0m Exiting..." << endl;
+            }
+            case 3: {
+                // Дополнительный шаг - автоматический выбор библиотек
+                cout << "\033[1;32m[INFO]\033[0m Automatically adding libraries from 'include' and 'lib' directories." << endl;
+                break;
+            }
+            case 4:
+                cout << "Exiting program..." << endl;
                 return 0;
             default:
-                cout << "\033[1;31m[ERROR]\033[0m Invalid choice. Please select again." << endl;
-                break;
+                cout << "\033[1;31m[ERROR]\033[0m Invalid choice, try again." << endl;
         }
 
-        // Задержка перед возвращением в меню
+        // Задержка, чтобы пользователь мог увидеть вывод
         system("pause");
     }
+
+    return 0;
 }
